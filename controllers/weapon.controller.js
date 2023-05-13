@@ -105,13 +105,14 @@ class WeaponController {
             }
             //weapon = await db.query(`SELECT * FROM base_weapon WHERE type=$1 OR subtype=$1`, [req.query.type])
         }
-        // baseWeaponsQuery = `SELECT t.*, i.stat AS implicit FROM (${baseWeaponsQuery}) AS t LEFT JOIN baseweapon_implicit AS bwi 
-        //                     ON t.id=bwi.weapon_id LEFT JOIN implicit AS i ON bwi.implicit_id=i.id ORDER BY t.id`
-        // uniqueWeaponsQuery = `SELECT uw.id, w.type, w.subtype, uw.name, uw.base, uw.req_lvl, uw.req_str, uw.req_dex, uw.req_int, 
-        //                     uw.min_damage, uw.max_min_damage, uw.min_max_damage, uw.max_damage, uw.min_aps, uw.max_aps,
-        //                     uw.min_crit,  uw.max_crit, uw.min_dps, uw.max_dps, w.implicit, uw.stats FROM (${baseWeaponsQuery}) AS w 
-        //                     JOIN unique_weapon AS uw ON w.id=uw.base_id`
         uniqueWeaponsQuery = `SELECT uw.id, uw.base_id FROM unique_weapon as uw JOIN (${baseWeaponsQuery}) AS bw ON uw.base_id=bw.id`
+        if(req.query.name && req.query.name!='null') {
+            baseWeaponsQuery = `SELECT bw.id FROM base_weapon as bw JOIN (${baseWeaponsQuery}) as t1 ON bw.id=t1.id 
+                WHERE bw.name LIKE '%${req.query.name}%'`
+            uniqueWeaponsQuery = `
+                SELECT uw.id, uw.base_id FROM unique_weapon as uw JOIN (${uniqueWeaponsQuery}) as t1 ON uw.id=t1.id 
+                WHERE uw.name LIKE '%${req.query.name}%'`
+        }
         if (req.query.minCrit && req.query.minCrit!=='null') {
             let minCrit = parseFloat(req.query.minCrit)
             baseWeaponsQuery = `SELECT bw.id FROM base_weapon as bw JOIN (${baseWeaponsQuery}) as t1 ON bw.id=t1.id WHERE bw.crit>=${minCrit}`
@@ -185,11 +186,6 @@ class WeaponController {
                 WHERE (uw.max_min_damage+uw.max_damage)/2<=${maxDamage} OR (uw.min_damage+uw.min_max_damage)/2<=${maxDamage}`
             // uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t8 WHERE max_damage<=${maxDamage}`
         }
-        // baseWeaponsQuery = `SELECT t.*, i.stat AS implicit FROM (${baseWeaponsQuery}) AS t LEFT JOIN baseweapon_implicit AS bwi 
-        //                     ON t.id=bwi.weapon_id LEFT JOIN implicit AS i ON bwi.implicit_id=i.id ORDER BY t.id ASC`
-        // uniqueWeaponsQuery = `SELECT uw.id, w.type, w.subtype, uw.name, uw.base, uw.req_lvl, uw.req_str, uw.req_dex, uw.req_int, w.damage, 
-        //                     w.aps, w.crit, w.dps, w.implicit, uw.stats FROM (${baseWeaponsQuery}) AS w 
-        //                     JOIN unique_weapon AS uw ON w.id=uw.base_id`
         if (req.query.minLvl && req.query.minLvl!=='null') {
             let minLvl = parseInt(req.query.minLvl)
             baseWeaponsQuery = `SELECT bw.id FROM base_weapon as bw JOIN (${baseWeaponsQuery}) as t9 ON bw.id=t9.id WHERE bw.req_lvl>=${minLvl}`
@@ -262,66 +258,54 @@ class WeaponController {
                 WHERE uw.req_int<=${maxInt}`
             // uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t16 WHERE req_int<=${maxInt}`
         }
-        baseWeaponsQuery = `
-            SELECT bw.*, array_agg(i.stat) as implicit FROM base_weapon as bw JOIN (${baseWeaponsQuery}) as w ON bw.id=w.id 
-            LEFT JOIN baseweapon_implicit as bwi ON w.id=bwi.weapon_id LEFT JOIN implicit as i ON bwi.implicit_id=i.id
+        let implicits = `
+            SELECT bw.id, array_agg(i.stat) as implicit, array_agg(i.stat_order) as impl_order FROM base_weapon as bw
+            LEFT JOIN baseweapon_implicit as bwi ON bw.id=bwi.weapon_id 
+            LEFT JOIN implicit as i ON bwi.implicit_id=i.id
             GROUP BY bw.id`
-        let implicitsForUniqueWeapon = `
-            SELECT uw.id, i.implicit as implicit FROM (${uniqueWeaponsQuery}) AS uw 
-            JOIN (SELECT bw.id, array_agg(i.stat) as implicit FROM base_weapon as bw 
-                LEFT JOIN baseweapon_implicit as bwi ON bw.id=bwi.weapon_id 
-                LEFT JOIN implicit as i ON bwi.implicit_id=i.id GROUP BY bw.id) AS i ON uw.base_id=i.id`
-        let uniqueStatsForUniqueWeapon = `
-            SELECT uw.id, array_agg(us.stat) as stats FROM (${uniqueWeaponsQuery}) as uw
+        // baseWeaponsQuery = `
+        //     SELECT bw.*, array_agg(i.stat) as implicit FROM base_weapon as bw JOIN (${baseWeaponsQuery}) as w ON bw.id=w.id 
+        //     LEFT JOIN baseweapon_implicit as bwi ON w.id=bwi.weapon_id LEFT JOIN implicit as i ON bwi.implicit_id=i.id
+        //     GROUP BY bw.id`
+        baseWeaponsQuery = `
+            SELECT bw.*, i.implicit as implicit, i.impl_order as impl_order FROM base_weapon as bw 
+            JOIN (${baseWeaponsQuery}) as w ON bw.id=w.id 
+            JOIN (${implicits}) as i ON w.id=i.id`
+        // let implicitsForUniqueWeapon = `
+        //     SELECT uw.id, i.implicit as implicit FROM (${uniqueWeaponsQuery}) AS uw 
+        //     JOIN (SELECT bw.id, array_agg(i.stat) as implicit FROM base_weapon as bw 
+        //         LEFT JOIN baseweapon_implicit as bwi ON bw.id=bwi.weapon_id 
+        //         LEFT JOIN implicit as i ON bwi.implicit_id=i.id GROUP BY bw.id) AS i ON uw.base_id=i.id`
+        let uniqueStats = `
+            SELECT uw.id, array_agg(us.stat) as stats, array_agg(us.stat_order) as stat_order FROM unique_weapon as uw
             LEFT JOIN uniqueweapon_stats as uws ON uws.item_id=uw.id
             LEFT JOIN unique_stats as us ON uws.stat_id=us.id GROUP BY uw.id`
+        uniqueWeaponsQuery = `
+            SELECT uw.*, i.implicit, i.impl_order, s.stats, s.stat_order FROM unique_weapon as uw JOIN(${uniqueWeaponsQuery}) as w ON uw.id=w.id
+            JOIN (${implicits}) AS i ON w.base_id=i.id
+            JOIN (${uniqueStats}) AS s ON w.id=s.id`
+        if (req.query.stat_order && req.query.stat_order!=='null') {
+            baseWeaponsQuery = `SELECT bw.* FROM (${baseWeaponsQuery}) as bw WHERE array_position(bw.impl_order, '${req.query.stat_order}')>0`
+            uniqueWeaponsQuery = `
+                SELECT uw.* FROM (${uniqueWeaponsQuery}) as uw 
+                WHERE array_position(uw.impl_order, '${req.query.stat_order}')>0 OR array_position(uw.stat_order, '${req.query.stat_order}')>0`
+        }
+        // let uniqueStatsForUniqueWeapon = `
+        //     SELECT uw.id, array_agg(us.stat) as stats FROM (${uniqueWeaponsQuery}) as uw
+        //     LEFT JOIN uniqueweapon_stats as uws ON uws.item_id=uw.id
+        //     LEFT JOIN unique_stats as us ON uws.stat_id=us.id GROUP BY uw.id`
         // let uniqueExpands = `
         //     SELECT uw.id, array_agg(e.stat) as expands FROM (${uniqueWeaponsQuery}) as uw
         //     LEFT JOIN uniqueweapon_expands as uwe ON uw.id=uwe.item_id
         //     LEFT JOIN expands as e ON uwe.expand_id=e.id`
-        uniqueWeaponsQuery = `
-            SELECT uw.*, i.implicit, s.stats FROM unique_weapon as uw 
-            JOIN (${implicitsForUniqueWeapon}) AS i ON uw.id=i.id
-            JOIN (${uniqueStatsForUniqueWeapon}) AS s ON uw.id=s.id`
+        // uniqueWeaponsQuery = `
+        //     SELECT uw.*, i.implicit, s.stats FROM unique_weapon as uw 
+        //     JOIN (${implicitsForUniqueWeapon}) AS i ON uw.id=i.id
+        //     JOIN (${uniqueStatsForUniqueWeapon}) AS s ON uw.id=s.id`
 
         let baseWeapons = await db.query(baseWeaponsQuery)
         let uniqueWeapons = await db.query(uniqueWeaponsQuery)
 
-        // if (req.query.minLvl && req.query.minLvl!=='null') {
-        //     let minLvl = parseInt(req.query.minLvl)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t9 WHERE req_lvl>=${minLvl}`
-        //     //console.log(baseWeaponsQuery)
-        // }
-        // if (req.query.maxLvl && req.query.maxLvl!=='null') {
-        //     let maxLvl = parseInt(req.query.maxLvl)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t10 WHERE req_lvl<=${maxLvl}`
-        // }
-        // if (req.query.minStr && req.query.minStr!=='null') {
-        //     let minStr = parseInt(req.query.minStr)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t11 WHERE req_str>=${minStr}`
-        // }
-        // if (req.query.maxStr && req.query.maxStr!=='null') {
-        //     let maxStr = parseInt(req.query.maxStr)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t12 WHERE req_str<=${maxStr}`
-        // }
-        // if (req.query.minDex && req.query.minDex!=='null') {
-        //     let minDex = parseInt(req.query.minDex)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t13 WHERE req_dex>=${minDex}`
-        // }
-        // if (req.query.maxDex && req.query.maxDex!=='null') {
-        //     let maxDex = parseInt(req.query.maxDex)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t14 WHERE req_dex<=${maxDex}`
-        // }
-        // if (req.query.minInt && req.query.minInt!=='null') {
-        //     let minInt = parseInt(req.query.minInt)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t15 WHERE req_int>=${minInt}`
-        // }
-        // if (req.query.maxInt && req.query.maxInt!=='null') {
-        //     let maxInt = parseInt(req.query.maxInt)
-        //     uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t16 WHERE req_int<=${maxInt}`
-        // }
-        // let uniqueWeapons = await db.query(uniqueWeaponsQuery)
-        
         if(req.query.rarity==='normal') {
             res.status(200).json({baseWeapons: baseWeapons.rows})
         } else if(req.query.rarity==='unique') {

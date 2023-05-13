@@ -15,6 +15,13 @@ class ArmourController {
             //console.log(baseWeaponsQuery)   
         }
         uniqueArmourQuery = `SELECT ua.id, ua.base_id FROM unique_armour as ua JOIN (${baseArmourQuery}) AS ba ON ua.base_id=ba.id`
+        if(req.query.name && req.query.name!='null') {
+            baseArmourQuery = `SELECT ba.id FROM base_armour as ba JOIN (${baseArmourQuery}) as t1 ON ba.id=t1.id 
+                WHERE ba.name LIKE '%${req.query.name}%'`
+            uniqueArmourQuery = `
+                SELECT ua.id, ua.base_id FROM unique_armour as ua JOIN (${uniqueArmourQuery}) as t1 ON ua.id=t1.id 
+                WHERE ua.name LIKE '%${req.query.name}%'`
+        }
         if (req.query.minArmour && req.query.minArmour!=='null') {
             let minArmour = parseInt(req.query.minArmour)
             baseArmourQuery = `SELECT ba.id FROM base_armour as ba JOIN (${baseArmourQuery}) as t1 ON ba.id=t1.id WHERE ba.min_armour>=${minArmour}`
@@ -160,27 +167,51 @@ class ArmourController {
                 WHERE ua.req_int<=${maxInt}`
             // uniqueWeaponsQuery = `SELECT * FROM (${uniqueWeaponsQuery}) as t16 WHERE req_int<=${maxInt}`
         }
-        baseArmourQuery = `
-            SELECT ba.*, array_agg(i.stat) as implicit FROM base_armour as ba JOIN (${baseArmourQuery}) as a ON ba.id=a.id 
-            LEFT JOIN basearmour_implicit as bai ON a.id=bai.armour_id LEFT JOIN implicit as i ON bai.implicit_id=i.id
+        let implicits = `
+            SELECT ba.id, array_agg(i.stat) as implicit, array_agg(i.stat_order) as impl_order FROM base_armour as ba
+            LEFT JOIN basearmour_implicit as bai ON ba.id=bai.armour_id 
+            LEFT JOIN implicit as i ON bai.implicit_id=i.id
             GROUP BY ba.id`
-        let implicitsForUniqueArmour = `
-            SELECT ua.id, i.implicit as implicit FROM (${uniqueArmourQuery}) AS ua 
-            JOIN (SELECT ba.id, array_agg(i.stat) as implicit FROM base_armour as ba 
-                LEFT JOIN basearmour_implicit as bai ON ba.id=bai.armour_id 
-                LEFT JOIN implicit as i ON bai.implicit_id=i.id GROUP BY ba.id) AS i ON ua.base_id=i.id`
-        let uniqueStatsForUniqueArmour = `
-            SELECT ua.id, array_agg(us.stat) as stats FROM (${uniqueArmourQuery}) as ua
+        baseArmourQuery = `
+            SELECT ba.*, i.implicit as implicit, i.impl_order as impl_order FROM base_armour as ba 
+            JOIN (${baseArmourQuery}) as a ON ba.id=a.id 
+            JOIN (${implicits}) as i ON a.id=i.id`
+        let uniqueStats = `
+            SELECT ua.id, array_agg(us.stat) as stats, array_agg(us.stat_order) as stat_order FROM unique_armour as ua
             LEFT JOIN uniquearmour_stats as uas ON uas.item_id=ua.id
             LEFT JOIN unique_stats as us ON uas.stat_id=us.id GROUP BY ua.id`
+        uniqueArmourQuery = `
+            SELECT ua.*, i.implicit, i.impl_order, s.stats, s.stat_order FROM unique_armour as ua 
+            JOIN(${uniqueArmourQuery}) as a ON ua.id=a.id
+            JOIN (${implicits}) AS i ON a.base_id=i.id
+            JOIN (${uniqueStats}) AS s ON a.id=s.id`
+        if (req.query.stat_order && req.query.stat_order!=='null') {
+            baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE array_position(ba.impl_order, '${req.query.stat_order}')>0`
+            uniqueWeaponsQuery = `
+                SELECT ua.* FROM (${uniqueArmourQuery}) as ua 
+                WHERE array_position(ua.impl_order, '${req.query.stat_order}')>0 OR array_position(ua.stat_order, '${req.query.stat_order}')>0`
+        }
+        // baseArmourQuery = `
+        //     SELECT ba.*, array_agg(i.stat) as implicit FROM base_armour as ba JOIN (${baseArmourQuery}) as a ON ba.id=a.id 
+        //     LEFT JOIN basearmour_implicit as bai ON a.id=bai.armour_id LEFT JOIN implicit as i ON bai.implicit_id=i.id
+        //     GROUP BY ba.id`
+        // let implicitsForUniqueArmour = `
+        //     SELECT ua.id, i.implicit as implicit FROM (${uniqueArmourQuery}) AS ua 
+        //     JOIN (SELECT ba.id, array_agg(i.stat) as implicit FROM base_armour as ba 
+        //         LEFT JOIN basearmour_implicit as bai ON ba.id=bai.armour_id 
+        //         LEFT JOIN implicit as i ON bai.implicit_id=i.id GROUP BY ba.id) AS i ON ua.base_id=i.id`
+        // let uniqueStatsForUniqueArmour = `
+        //     SELECT ua.id, array_agg(us.stat) as stats FROM (${uniqueArmourQuery}) as ua
+        //     LEFT JOIN uniquearmour_stats as uas ON uas.item_id=ua.id
+        //     LEFT JOIN unique_stats as us ON uas.stat_id=us.id GROUP BY ua.id`
         // let uniqueExpands = `
         //     SELECT uw.id, array_agg(e.stat) as expands FROM (${uniqueWeaponsQuery}) as uw
         //     LEFT JOIN uniqueweapon_expands as uwe ON uw.id=uwe.item_id
         //     LEFT JOIN expands as e ON uwe.expand_id=e.id`
-        uniqueArmourQuery = `
-            SELECT ua.*, i.implicit, s.stats FROM unique_armour as ua 
-            JOIN (${implicitsForUniqueArmour}) AS i ON ua.id=i.id
-            JOIN (${uniqueStatsForUniqueArmour}) AS s ON ua.id=s.id`
+        // uniqueArmourQuery = `
+        //     SELECT ua.*, i.implicit, s.stats FROM unique_armour as ua 
+        //     JOIN (${implicitsForUniqueArmour}) AS i ON ua.id=i.id
+        //     JOIN (${uniqueStatsForUniqueArmour}) AS s ON ua.id=s.id`
 
         let baseArmour = await db.query(baseArmourQuery)
         let uniqueArmour = await db.query(uniqueArmourQuery)
