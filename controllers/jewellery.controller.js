@@ -3,6 +3,12 @@ const db = require('../src/db')
 class JewelleryController {
     async getJewellery(req, res) {
         let baseJewelleryQuery = 'SELECT * FROM base_jewellery'
+        let rareJewelleryQuery = `
+            SELECT DISTINCT ON (bj.type, bj.subtype) bj.type, bj.subtype, tag.tags FROM (
+                SELECT bj.id, array_agg(t.tag) AS tags FROM base_jewellery AS bj 
+                LEFT JOIN basejewellery_tags AS bjt ON bj.id=bjt.jewellery_id
+                LEFT JOIN tags AS t ON bjt.tag_id=t.id group by bj.id
+            ) as tag JOIN base_jewellery as bj ON bj.id=tag.id`
         let uniqueJewelleryQuery = 'SELECT * FROM unique_jewellery'
         if (req.query.type && req.query.type!=='null') {
             baseJewelleryQuery = `
@@ -11,6 +17,7 @@ class JewelleryController {
                     LEFT JOIN basejewellery_tags AS bjt ON bj.id=bjt.jewellery_id
                     LEFT JOIN tags AS t ON bjt.tag_id=t.id group by bj.id) as j ON bj.id=j.id
                 WHERE array_position(j.tags, '${req.query.type}')>0`
+            rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE array_position(tags, '${req.query.type}')>0`
         }
         uniqueJewelleryQuery = `SELECT uj.id, uj.base_id FROM unique_jewellery as uj JOIN (${baseJewelleryQuery}) AS bj ON uj.base_id=bj.id`
         if(req.query.name && req.query.name!='null') {
@@ -45,6 +52,21 @@ class JewelleryController {
             SELECT bj.*, i.implicit as implicit, i.impl_order as impl_order FROM base_jewellery as bj 
             JOIN (${baseJewelleryQuery}) as j ON bj.id=j.id 
             JOIN (${implicits}) as i ON j.id=i.id`
+        let affixes = `
+            SELECT tags.id, a.type, a.stat, tags.tags, tags.stat_order, iae.tags as e_tags FROM items_affixes as a JOIN (
+                SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
+                LEFT JOIN itemsaffixes_tags as iat ON ia.id=iat.stat_id
+                LEFT JOIN tags as t ON iat.tag_id=t.id GROUP BY ia.id
+            ) as tags ON a.id=tags.id LEFT JOIN (
+                SELECT * FROM (SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
+                LEFT JOIN itemsaffixes_exclusiontags as iaet ON ia.id=iaet.stat_id
+                LEFT JOIN tags as t ON iaet.tag_id=t.id GROUP BY ia.id) as tags
+            ) as iae ON iae.id=tags.id`
+        rareJewelleryQuery = `
+            SELECT t.type as j_type, t.subtype as j_subtype, ia.type as stat_type, ia.stat as stat, ia.stat_order as stat_order 
+            FROM (${rareJewelleryQuery}) as t 
+            JOIN (${affixes}) as ia ON ((t.tags && ia.tags) AND NOT (ia.e_tags && t.tags))
+            ORDER BY t.type, t.subtype, stat`
         let uniqueStats = `
             SELECT uj.id, array_agg(us.stat) as stats, array_agg(us.stat_order) as stat_order FROM unique_jewellery as uj
             LEFT JOIN uniquejewellery_stats as ujs ON ujs.item_id=uj.id
@@ -56,10 +78,13 @@ class JewelleryController {
             JOIN (${uniqueStats}) AS s ON j.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
             baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE array_position(bj.impl_order, '${req.query.stat_order}')>0`
+            rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
             uniqueJewelleryQuery = `
                 SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj 
                 WHERE array_position(uj.impl_order, '${req.query.stat_order}')>0 OR array_position(uj.stat_order, '${req.query.stat_order}')>0`
         }
+        rareJewelleryQuery = `
+            SELECT j_type, j_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareJewelleryQuery}) as j GROUP BY (j_type, j_subtype)`
 
         // baseJewelleryQuery = `
         //     SELECT bj.*, array_agg(i.stat) as implicit FROM base_jewellery as bj JOIN (${baseJewelleryQuery}) as j ON bj.id=j.id 
@@ -84,14 +109,21 @@ class JewelleryController {
         //     JOIN (${uniqueStatsForUniqueJewellery}) AS s ON ua.id=s.id`
 
         let baseJewellery = await db.query(baseJewelleryQuery)
+        let rareJewellery = await db.query(rareJewelleryQuery)
         let uniqueJewellery = await db.query(uniqueJewelleryQuery)
         
         if(req.query.rarity==='normal') {
             res.status(200).json({baseJewellery: baseJewellery.rows})
+        } else if(req.query.rarity==='rare') {
+            res.status(200).json({rareJewellery: rareJewellery.rows})
         } else if(req.query.rarity==='unique') {
             res.status(200).json({uniqueJewellery: uniqueJewellery.rows})
         } else if(req.query.rarity==='any') {
-            res.status(200).json({baseJewellery: baseJewellery.rows, uniqueJewellery: uniqueJewellery.rows})
+            res.status(200).json({
+                baseJewellery: baseJewellery.rows, 
+                rareJewellery: rareJewellery.rows,
+                uniqueJewellery: uniqueJewellery.rows
+            })
         }
     }
 }

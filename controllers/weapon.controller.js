@@ -5,6 +5,12 @@ class WeaponController {
         // const weapon = await db.query('SELECT * FROM base_weapon ORDER BY id ASC')
         // let weapon = await db.query(`WITH tmp_base_weapon AS (SELECT * FROM base_weapon) SELECT * FROM tmp_base_weapon`)
         let baseWeaponsQuery = 'SELECT * FROM base_weapon'
+        let rareWeaponsQuery = `
+            SELECT DISTINCT ON (bw.type, bw.subtype) bw.type, bw.subtype, tag.tags FROM (
+                SELECT bw.id, array_agg(t.tag) AS tags FROM base_weapon AS bw 
+                LEFT JOIN baseweapon_tags AS bwt ON bw.id=bwt.weapon_id
+                LEFT JOIN tags AS t ON bwt.tag_id=t.id group by bw.id
+            ) as tag JOIN base_weapon as bw ON bw.id=tag.id`
         let uniqueWeaponsQuery = 'SELECT * FROM unique_weapon'
         // let weapon = await db.query('\
         //     SELECT bw.*, i.stat FROM base_weapon AS bw JOIN baseweapon_implicit AS bwi \
@@ -13,6 +19,7 @@ class WeaponController {
             switch(req.query.type) {
                 case 'base_dagger': // Получить все обычные кинжалы
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='Dagger' AND subtype IS NULL`
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='Dagger' AND subtype IS NULL`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='Dagger' AND subtype IS NULL`
                     // weapon = await db.query(`\
                     // SELECT bw.*, i.stat FROM base_weapon AS bw LEFT JOIN baseweapon_implicit AS bwi \
@@ -21,10 +28,12 @@ class WeaponController {
                     break
                 case 'one_hand_axe': // Получить все одноручные топоры
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='One Handed Axe'`
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='One Handed Axe'`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='One Handed Axe'`
                     break
                 case 'one_hand_sword': // Получить все одноручные мечи
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='One Handed Sword'`
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='One Handed Sword'`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='One Handed Sword'`
                     break
                 case 'one_hand_mace': // Получить все одноручные булавы
@@ -34,21 +43,28 @@ class WeaponController {
                         LEFT JOIN baseweapon_tags AS bwt ON bw.id=bwt.weapon_id
                         LEFT JOIN tags AS t ON bwt.tag_id=t.id group by bw.id) as w ON bw.id=w.id
                         WHERE array_position(w.tags, 'mace')>0 AND array_position(w.tags, 'onehand')>0`
+                    rareWeaponsQuery = `
+                        SELECT * FROM (${rareWeaponsQuery}) as rw 
+                        WHERE array_position(tags, 'mace')>0 AND array_position(tags, 'onehand')>0`
                     break
                 case 'base_staff': // Получить все обычные посохи
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='Staff' AND subtype IS NULL` 
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='Staff' AND subtype IS NULL`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='Staff' AND subtype IS NULL` 
                     break
                 case 'two_hand_axe': // Получить все двуручные топоры
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='Two Handed Axe'` 
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='Two Handed Axe'`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='Two Handed Axe'` 
                     break
                 case 'two_hand_mace': // Получить все двуручные булавы
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='Two Handed Mace'` 
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='Two Handed Mace'`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='Two Handed Mace'` 
                     break
                 case 'two_hand_sword': // Получить все двуручные мечи
                     baseWeaponsQuery = `SELECT bw.id FROM (${baseWeaponsQuery}) as bw WHERE type='Two Handed Sword'`
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE type='Two Handed Sword'`
                     // baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE type='Two Handed Sword'` 
                     break
                 default:
@@ -58,6 +74,7 @@ class WeaponController {
                         LEFT JOIN baseweapon_tags AS bwt ON bw.id=bwt.weapon_id
                         LEFT JOIN tags AS t ON bwt.tag_id=t.id group by bw.id) as w ON bw.id=w.id
                         WHERE array_position(w.tags, '${req.query.type}')>0`
+                    rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE array_position(tags, '${req.query.type}')>0`
                     //baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE array_position(bw.tags, '${req.query.type}')>0`
                     //console.log(baseWeaponsQuery)
                     break
@@ -271,6 +288,21 @@ class WeaponController {
             SELECT bw.*, i.implicit as implicit, i.impl_order as impl_order FROM base_weapon as bw 
             JOIN (${baseWeaponsQuery}) as w ON bw.id=w.id 
             JOIN (${implicits}) as i ON w.id=i.id`
+        let affixes = `
+            SELECT tags.id, a.type, a.stat, tags.tags, tags.stat_order, iae.tags as e_tags FROM items_affixes as a JOIN (
+                SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
+                LEFT JOIN itemsaffixes_tags as iat ON ia.id=iat.stat_id
+                LEFT JOIN tags as t ON iat.tag_id=t.id GROUP BY ia.id
+            ) as tags ON a.id=tags.id LEFT JOIN (
+                SELECT * FROM (SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
+                LEFT JOIN itemsaffixes_exclusiontags as iaet ON ia.id=iaet.stat_id
+                LEFT JOIN tags as t ON iaet.tag_id=t.id GROUP BY ia.id) as tags
+            ) as iae ON iae.id=tags.id`
+        rareWeaponsQuery = `
+            SELECT t.type as w_type, t.subtype as w_subtype, ia.type as stat_type, ia.stat as stat, ia.stat_order as stat_order 
+            FROM (${rareWeaponsQuery}) as t 
+            JOIN (${affixes}) as ia ON ((t.tags && ia.tags) AND NOT (ia.e_tags && t.tags))
+            ORDER BY t.type, t.subtype, stat`
         // let implicitsForUniqueWeapon = `
         //     SELECT uw.id, i.implicit as implicit FROM (${uniqueWeaponsQuery}) AS uw 
         //     JOIN (SELECT bw.id, array_agg(i.stat) as implicit FROM base_weapon as bw 
@@ -286,10 +318,13 @@ class WeaponController {
             JOIN (${uniqueStats}) AS s ON w.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
             baseWeaponsQuery = `SELECT bw.* FROM (${baseWeaponsQuery}) as bw WHERE array_position(bw.impl_order, '${req.query.stat_order}')>0`
+            rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE rw.stat_order=${req.query.stat_order}`
             uniqueWeaponsQuery = `
                 SELECT uw.* FROM (${uniqueWeaponsQuery}) as uw 
-                WHERE array_position(uw.impl_order, '${req.query.stat_order}')>0 OR array_position(uw.stat_order, '${req.query.stat_order}')>0`
+                WHERE array_position(uw.impl_order, '${req.query.stat_order}')>0 OR array_position(uw.stat_order, '${req.query.stat_order}')>0`   
         }
+        rareWeaponsQuery = `
+            SELECT w_type, w_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareWeaponsQuery}) as w GROUP BY (w_type, w_subtype)`
         // let uniqueStatsForUniqueWeapon = `
         //     SELECT uw.id, array_agg(us.stat) as stats FROM (${uniqueWeaponsQuery}) as uw
         //     LEFT JOIN uniqueweapon_stats as uws ON uws.item_id=uw.id
@@ -304,15 +339,23 @@ class WeaponController {
         //     JOIN (${uniqueStatsForUniqueWeapon}) AS s ON uw.id=s.id`
 
         let baseWeapons = await db.query(baseWeaponsQuery)
+        let rareWeapons = await db.query(rareWeaponsQuery)
         let uniqueWeapons = await db.query(uniqueWeaponsQuery)
 
         if(req.query.rarity==='normal') {
             res.status(200).json({baseWeapons: baseWeapons.rows})
-        } else if(req.query.rarity==='unique') {
+        } else if(req.query.rarity==='rare') {
+            //console.log(rareWeapons.rows.length)
+            res.status(200).json({rareWeapons: rareWeapons.rows})
+        }else if(req.query.rarity==='unique') {
             console.log(uniqueWeapons.rows.length)
             res.status(200).json({uniqueWeapons: uniqueWeapons.rows})
         } else if(req.query.rarity==='any') {
-            res.status(200).json({baseWeapons: baseWeapons.rows, uniqueWeapons: uniqueWeapons.rows})
+            res.status(200).json({
+                baseWeapons: baseWeapons.rows, 
+                rareWeapons: rareWeapons.rows,
+                uniqueWeapons: uniqueWeapons.rows,
+            })
         }
     }
 }

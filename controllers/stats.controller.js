@@ -14,8 +14,16 @@ class StatsController {
             ) AS dist ORDER BY count DESC`
         
         if (req.query.stat && req.query.stat!=='null') {
-            statsQuery = `SELECT ai.* FROM items_affixes as ai JOIN (${statsQuery}) as s ON ai.stat_order=s.stat_order 
-            WHERE ai.stat LIKE '%${req.query.stat}%' AND (ai.type='Suffix' OR ai.type='Prefix')`
+            statsQuery = `
+                SELECT * FROM (
+                    SELECT ia.type, ia.stat, ia.stat_order FROM items_affixes as ia 
+                    UNION SELECT fa.type, fa.stat, fa.stat_order FROM flasks_affixes as fa
+                ) as a 
+                WHERE a.stat LIKE '%${req.query.stat}%' AND (a.type='Suffix' OR a.type='Prefix')`
+                //JOIN (${statsQuery}) as s ON a.stat_order=s.stat_order
+                // WHERE ia.stat LIKE '%${req.query.stat}%' AND (ia.type='Suffix' OR ia.type='Prefix')
+                // UNION SELECT fa.stat, fa.stat_order FROM flasks_affixes as fa JOIN (${statsQuery}) as s ON fa.stat_order=s.stat_order 
+                // WHERE fa.stat LIKE '%${req.query.stat}%' AND (fa.type='Suffix' OR fa.type='Prefix')`
         }
 
         //statsQuery = `SELECT * FROM (${statsQuery}) as s LIMIT 100`

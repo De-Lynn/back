@@ -3,6 +3,12 @@ const db = require('../src/db')
 class ArmourController {
     async getArmour(req, res) {
         let baseArmourQuery = 'SELECT * FROM base_armour'
+        let rareArmourQuery = `
+            SELECT DISTINCT ON (ba.type, ba.subtype) ba.type, ba.subtype, tag.tags FROM (
+                SELECT ba.id, array_agg(t.tag) AS tags FROM base_armour AS ba 
+                LEFT JOIN basearmour_tags AS bat ON ba.id=bat.armour_id
+                LEFT JOIN tags AS t ON bat.tag_id=t.id group by ba.id
+            ) as tag JOIN base_armour as ba ON ba.id=tag.id`
         let uniqueArmourQuery = 'SELECT * FROM unique_armour'
         if (req.query.type && req.query.type!=='null') {
             baseArmourQuery = `
@@ -11,6 +17,7 @@ class ArmourController {
                     LEFT JOIN basearmour_tags AS bat ON ba.id=bat.armour_id
                     LEFT JOIN tags AS t ON bat.tag_id=t.id group by ba.id) as a ON ba.id=a.id
                 WHERE array_position(a.tags, '${req.query.type}')>0`
+            rareArmourQuery = `SELECT * FROM (${rareArmourQuery}) as ra WHERE array_position(tags, '${req.query.type}')>0`
             //baseWeaponsQuery = `SELECT * FROM (${baseWeaponsQuery}) as bw WHERE array_position(bw.tags, '${req.query.type}')>0`
             //console.log(baseWeaponsQuery)   
         }
@@ -176,6 +183,21 @@ class ArmourController {
             SELECT ba.*, i.implicit as implicit, i.impl_order as impl_order FROM base_armour as ba 
             JOIN (${baseArmourQuery}) as a ON ba.id=a.id 
             JOIN (${implicits}) as i ON a.id=i.id`
+        let affixes = `
+            SELECT tags.id, a.type, a.stat, tags.tags, tags.stat_order, iae.tags as e_tags FROM items_affixes as a JOIN (
+                SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
+                LEFT JOIN itemsaffixes_tags as iat ON ia.id=iat.stat_id
+                LEFT JOIN tags as t ON iat.tag_id=t.id GROUP BY ia.id
+            ) as tags ON a.id=tags.id LEFT JOIN (
+                SELECT * FROM (SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
+                LEFT JOIN itemsaffixes_exclusiontags as iaet ON ia.id=iaet.stat_id
+                LEFT JOIN tags as t ON iaet.tag_id=t.id GROUP BY ia.id) as tags
+            ) as iae ON iae.id=tags.id`
+        rareArmourQuery = `
+            SELECT t.type as a_type, t.subtype as a_subtype, ia.type as stat_type, ia.stat as stat, ia.stat_order as stat_order 
+            FROM (${rareArmourQuery}) as t 
+            JOIN (${affixes}) as ia ON ((t.tags && ia.tags) AND NOT (ia.e_tags && t.tags))
+            ORDER BY t.type, t.subtype, stat`
         let uniqueStats = `
             SELECT ua.id, array_agg(us.stat) as stats, array_agg(us.stat_order) as stat_order FROM unique_armour as ua
             LEFT JOIN uniquearmour_stats as uas ON uas.item_id=ua.id
@@ -187,10 +209,13 @@ class ArmourController {
             JOIN (${uniqueStats}) AS s ON a.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
             baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE array_position(ba.impl_order, '${req.query.stat_order}')>0`
-            uniqueWeaponsQuery = `
+            rareArmourQuery = `SELECT * FROM (${rareArmourQuery}) as ra WHERE ra.stat_order=${req.query.stat_order}`
+            uniqueArmourQuery = `
                 SELECT ua.* FROM (${uniqueArmourQuery}) as ua 
                 WHERE array_position(ua.impl_order, '${req.query.stat_order}')>0 OR array_position(ua.stat_order, '${req.query.stat_order}')>0`
         }
+        rareArmourQuery = `
+            SELECT a_type, a_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareArmourQuery}) as a GROUP BY (a_type, a_subtype)`
         // baseArmourQuery = `
         //     SELECT ba.*, array_agg(i.stat) as implicit FROM base_armour as ba JOIN (${baseArmourQuery}) as a ON ba.id=a.id 
         //     LEFT JOIN basearmour_implicit as bai ON a.id=bai.armour_id LEFT JOIN implicit as i ON bai.implicit_id=i.id
@@ -214,15 +239,22 @@ class ArmourController {
         //     JOIN (${uniqueStatsForUniqueArmour}) AS s ON ua.id=s.id`
 
         let baseArmour = await db.query(baseArmourQuery)
+        let rareArmour = await db.query(rareArmourQuery)
         let uniqueArmour = await db.query(uniqueArmourQuery)
         
         if(req.query.rarity==='normal') {
             res.status(200).json({baseArmour: baseArmour.rows})
+        } else if(req.query.rarity==='rare') {
+            res.status(200).json({rareArmour: rareArmour.rows})
         } else if(req.query.rarity==='unique') {
             //console.log(uniqueWeapons.rows.length)
             res.status(200).json({uniqueArmour: uniqueArmour.rows})
         } else if(req.query.rarity==='any') {
-            res.status(200).json({baseArmour: baseArmour.rows, uniqueArmour: uniqueArmour.rows})
+            res.status(200).json({
+                baseArmour: baseArmour.rows, 
+                rareArmour: rareArmour.rows,
+                uniqueArmour: uniqueArmour.rows
+            })
         }
     }
 }

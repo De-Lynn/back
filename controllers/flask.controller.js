@@ -3,6 +3,12 @@ const db = require('../src/db')
 class FlaskController {
     async getFlasks(req, res) {
         let baseFlasksQuery = 'SELECT * FROM base_flasks'
+        let rareFlasksQuery = `
+            SELECT DISTINCT ON (bf.type, bf.subtype) bf.type, bf.subtype, tag.tags FROM (
+                SELECT bf.id, array_agg(t.tag) AS tags FROM base_flasks AS bf 
+                LEFT JOIN baseflasks_tags AS bft ON bf.id=bft.flask_id
+                LEFT JOIN tags AS t ON bft.tag_id=t.id group by bf.id
+            ) as tag JOIN base_flasks as bf ON bf.id=tag.id`
         let uniqueFlasksQuery = 'SELECT * FROM unique_flasks'
         if (req.query.type && req.query.type!=='null') {
             baseFlasksQuery = `
@@ -11,6 +17,7 @@ class FlaskController {
                     LEFT JOIN baseflasks_tags AS bjt ON bj.id=bjt.flask_id
                     LEFT JOIN tags AS t ON bjt.tag_id=t.id group by bj.id) as j ON bj.id=j.id
                 WHERE array_position(j.tags, '${req.query.type}')>0`
+            rareFlasksQuery = `SELECT * FROM (${rareFlasksQuery}) as rf WHERE array_position(tags, '${req.query.type}')>0`
         }
         uniqueFlasksQuery = `SELECT uj.id, uj.base_id FROM unique_flasks as uj JOIN (${baseFlasksQuery}) AS bj ON uj.base_id=bj.id`
         if(req.query.name && req.query.name!='null') {
@@ -57,6 +64,21 @@ class FlaskController {
         //     JOIN (SELECT bj.id, array_agg(i.stat) as implicit FROM base_flasks as bj 
         //         LEFT JOIN baseflasks_implicit as bji ON bj.id=bji.flask_id 
         //         LEFT JOIN implicit as i ON bji.implicit_id=i.id GROUP BY bj.id) AS i ON uj.base_id=i.id`
+        let affixes = `
+            SELECT tags.id, a.type, a.stat, tags.tags, tags.stat_order, fae.tags as e_tags FROM flasks_affixes as a JOIN (
+                SELECT fa.id, array_agg(t.tag) as tags, fa.stat_order FROM flasks_affixes as fa  
+                LEFT JOIN flasksaffixes_tags as fat ON fa.id=fat.stat_id
+                LEFT JOIN tags as t ON fat.tag_id=t.id GROUP BY fa.id
+            ) as tags ON a.id=tags.id LEFT JOIN (
+                SELECT * FROM (SELECT fa.id, array_agg(t.tag) as tags, fa.stat_order FROM flasks_affixes as fa  
+                LEFT JOIN flasksaffixes_exclusiontags as faet ON fa.id=faet.stat_id
+                LEFT JOIN tags as t ON faet.tag_id=t.id GROUP BY fa.id) as tags
+            ) as fae ON fae.id=tags.id`
+        rareFlasksQuery = `
+            SELECT t.type as f_type, t.subtype as f_subtype, fa.type as stat_type, fa.stat as stat, fa.stat_order as stat_order 
+            FROM (${rareFlasksQuery}) as t 
+            JOIN (${affixes}) as fa ON ((t.tags && fa.tags) AND NOT (fa.e_tags && t.tags))
+            ORDER BY t.type, t.subtype, stat`
         let uniqueStats = `
             SELECT uf.id, array_agg(us.stat) as stats, array_agg(us.stat_order) as stat_order FROM unique_flasks as uf
             LEFT JOIN uniqueflasks_stats as ufs ON ufs.item_id=uf.id
@@ -66,32 +88,45 @@ class FlaskController {
         //     LEFT JOIN uniqueweapon_expands as uwe ON uw.id=uwe.item_id
         //     LEFT JOIN expands as e ON uwe.expand_id=e.id`
         uniqueFlasksQuery = `
-            SELECT uf.*, bf.subtype, b.buff, b.buff_order, i.implicit, i.impl_order, s.stats, s.stat_order FROM unique_flasks as uf 
+            SELECT uf.*, bf.subtype, b.buffs, b.buff_order, i.implicit, i.impl_order, s.stats, s.stat_order FROM unique_flasks as uf 
             JOIN(${uniqueFlasksQuery}) as f ON uf.id=f.id
             JOIN base_flasks as bf ON f.base_id=bf.id
             JOIN (${buffs}) AS b ON f.base_id=b.id
             JOIN (${implicits}) AS i ON f.base_id=i.id
             JOIN (${uniqueStats}) AS s ON f.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
+            let stat_order = parseFloat(req.query.stat_order)
             baseFlasksQuery = `
                 SELECT bf.* FROM (${baseFlasksQuery}) as bf 
-                WHERE array_position(bf.impl_order, '${req.query.stat_order}')>0 OR array_position(bf.impl_order, '${req.query.stat_order}')>0`
-            uniqueWeaponsQuery = `
-                SELECT uw.* FROM (${uniqueWeaponsQuery}) as uw 
-                WHERE array_position(uw.impl_order, '${req.query.stat_order}')>0 OR array_position(uw.stat_order, '${req.query.stat_order}')>0
-                OR array_position(uw.buff_order, '${req.query.stat_order}')>0`
+                WHERE array_position(bf.impl_order, ${stat_order})>0 OR array_position(bf.impl_order, ${stat_order})>0`
+            rareFlasksQuery = `SELECT * FROM (${rareFlasksQuery}) as rf WHERE rf.stat_order=${stat_order}`
+            uniqueFlasksQuery = `
+                SELECT uf.* FROM (${uniqueFlasksQuery}) as uf 
+                WHERE array_position(uf.impl_order, ${stat_order})>0 OR array_position(uf.stat_order, ${stat_order})>0
+                OR array_position(uf.buff_order, ${stat_order})>0`
         }
+        rareFlasksQuery = `
+            SELECT f_type, f_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareFlasksQuery}) as f GROUP BY (f_type, f_subtype)`
+
         let baseFlasks = await db.query(baseFlasksQuery)
+        let rareFlasks = await db.query(rareFlasksQuery)
         let uniqueFlasks = await db.query(uniqueFlasksQuery)
         
         if(req.query.rarity==='normal') {
             console.log(baseFlasks.rows.length)
             res.status(200).json({baseFlasks: baseFlasks.rows})
+        } else if(req.query.rarity==='rare') {
+            console.log(rareFlasks.rows.length)
+            res.status(200).json({rareFlasks: rareFlasks.rows})
         } else if(req.query.rarity==='unique') {
             console.log(uniqueFlasks.rows.length)
             res.status(200).json({uniqueFlasks: uniqueFlasks.rows})
         } else if(req.query.rarity==='any') {
-            res.status(200).json({baseFlasks: baseFlasks.rows, uniqueFlasks: uniqueFlasks.rows})
+            res.status(200).json({
+                baseFlasks: baseFlasks.rows, 
+                rareFlasks: rareFlasks.rows,
+                uniqueFlasks: uniqueFlasks.rows
+            })
         }
     }
 }
