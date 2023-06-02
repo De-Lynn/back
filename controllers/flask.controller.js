@@ -23,6 +23,7 @@ class FlaskController {
         if(req.query.name && req.query.name!='null') {
             baseFlasksQuery = `SELECT bf.id FROM base_flasks as bf JOIN (${baseFlasksQuery}) as t1 ON bf.id=t1.id 
                 WHERE bf.name LIKE '%${req.query.name}%'`
+            rareFlasksQuery = ``
             uniqueFlasksQuery = `
                 SELECT uf.id, uf.base_id FROM unique_flasks as uf JOIN (${uniqueFlasksQuery}) as t1 ON uf.id=t1.id 
                 WHERE uf.name LIKE '%${req.query.name}%'`
@@ -31,6 +32,7 @@ class FlaskController {
             let minLvl = parseInt(req.query.minLvl)
             baseFlasksQuery = `
                 SELECT bj.id FROM base_flasks as bj JOIN (${baseFlasksQuery}) as t9 ON bj.id=t9.id WHERE bj.req_lvl>=${minLvl}`
+            rareFlasksQuery = ``
             uniqueFlasksQuery = `
                 SELECT uj.id, uj.base_id FROM unique_flasks as uj JOIN (${uniqueFlasksQuery}) as t9 ON uj.id=t9.id
                 WHERE uj.req_lvl>=${minLvl}`
@@ -39,6 +41,7 @@ class FlaskController {
             let maxLvl = parseInt(req.query.maxLvl)
             baseFlasksQuery = `
                 SELECT bj.id FROM base_flasks as bj JOIN (${baseFlasksQuery}) as t10 ON bj.id=t10.id WHERE bj.req_lvl<=${maxLvl}`
+            rareFlasksQuery = ``
             uniqueFlasksQuery = `
                 SELECT uj.id, uj.base_id FROM unique_flasks as uj JOIN (${uniqueFlasksQuery}) as t10 ON uj.id=t10.id
                 WHERE uj.req_lvl<=${maxLvl}`
@@ -75,7 +78,7 @@ class FlaskController {
                 LEFT JOIN tags as t ON faet.tag_id=t.id GROUP BY fa.id) as tags
             ) as fae ON fae.id=tags.id`
         rareFlasksQuery = `
-            SELECT t.type as f_type, t.subtype as f_subtype, fa.type as stat_type, fa.stat as stat, fa.stat_order as stat_order 
+            SELECT t.type as i_type, t.subtype as i_subtype, fa.type as stat_type, fa.stat as stat, fa.stat_order as stat_order 
             FROM (${rareFlasksQuery}) as t 
             JOIN (${affixes}) as fa ON ((t.tags && fa.tags) AND NOT (fa.e_tags && t.tags))
             ORDER BY t.type, t.subtype, stat`
@@ -106,7 +109,7 @@ class FlaskController {
                 OR array_position(uf.buff_order, ${stat_order})>0`
         }
         rareFlasksQuery = `
-            SELECT f_type, f_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareFlasksQuery}) as f GROUP BY (f_type, f_subtype)`
+            SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareFlasksQuery}) as f GROUP BY (i_type, i_subtype)`
 
         let baseFlasks = await db.query(baseFlasksQuery)
         let rareFlasks = await db.query(rareFlasksQuery)

@@ -23,6 +23,7 @@ class JewelleryController {
         if(req.query.name && req.query.name!='null') {
             baseJewelleryQuery = `SELECT bj.id FROM base_jewellery as bj JOIN (${baseJewelleryQuery}) as t1 ON bj.id=t1.id 
                 WHERE bj.name LIKE '%${req.query.name}%'`
+            rareJewelleryQuery = ``
             uniqueJewelleryQuery = `
                 SELECT uj.id, uj.base_id FROM unique_jewellery as uj JOIN (${uniqueJewelleryQuery}) as t1 ON uj.id=t1.id 
                 WHERE uj.name LIKE '%${req.query.name}%'`
@@ -31,6 +32,7 @@ class JewelleryController {
             let minLvl = parseInt(req.query.minLvl)
             baseJewelleryQuery = `
                 SELECT bj.id FROM base_jewellery as bj JOIN (${baseJewelleryQuery}) as t9 ON bj.id=t9.id WHERE bj.req_lvl>=${minLvl}`
+            rareJewelleryQuery = ``
             uniqueJewelleryQuery = `
                 SELECT uj.id, uj.base_id FROM unique_jewellery as uj JOIN (${uniqueJewelleryQuery}) as t9 ON uj.id=t9.id
                 WHERE uj.req_lvl>=${minLvl}`
@@ -39,6 +41,7 @@ class JewelleryController {
             let maxLvl = parseInt(req.query.maxLvl)
             baseJewelleryQuery = `
                 SELECT bj.id FROM base_jewellery as bj JOIN (${baseJewelleryQuery}) as t10 ON bj.id=t10.id WHERE bj.req_lvl<=${maxLvl}`
+            rareJewelleryQuery = ``   
             uniqueJewelleryQuery = `
                 SELECT uj.id, uj.base_id FROM unique_jewellery as uj JOIN (${uniqueJewelleryQuery}) as t10 ON uj.id=t10.id
                 WHERE uj.req_lvl<=${maxLvl}`
@@ -52,7 +55,8 @@ class JewelleryController {
             SELECT bj.*, i.implicit as implicit, i.impl_order as impl_order FROM base_jewellery as bj 
             JOIN (${baseJewelleryQuery}) as j ON bj.id=j.id 
             JOIN (${implicits}) as i ON j.id=i.id`
-        let affixes = `
+        if (rareJewelleryQuery!=='') {
+            let affixes = `
             SELECT tags.id, a.type, a.stat, tags.tags, tags.stat_order, iae.tags as e_tags FROM items_affixes as a JOIN (
                 SELECT ia.id, array_agg(t.tag) as tags, ia.stat_order FROM items_affixes as ia  
                 LEFT JOIN itemsaffixes_tags as iat ON ia.id=iat.stat_id
@@ -62,11 +66,12 @@ class JewelleryController {
                 LEFT JOIN itemsaffixes_exclusiontags as iaet ON ia.id=iaet.stat_id
                 LEFT JOIN tags as t ON iaet.tag_id=t.id GROUP BY ia.id) as tags
             ) as iae ON iae.id=tags.id`
-        rareJewelleryQuery = `
-            SELECT t.type as j_type, t.subtype as j_subtype, ia.type as stat_type, ia.stat as stat, ia.stat_order as stat_order 
-            FROM (${rareJewelleryQuery}) as t 
-            JOIN (${affixes}) as ia ON ((t.tags && ia.tags) AND NOT (ia.e_tags && t.tags))
-            ORDER BY t.type, t.subtype, stat`
+            rareJewelleryQuery = `
+                SELECT t.type as i_type, t.subtype as i_subtype, ia.type as stat_type, ia.stat as stat, ia.stat_order as stat_order 
+                FROM (${rareJewelleryQuery}) as t 
+                JOIN (${affixes}) as ia ON ((t.tags && ia.tags) AND NOT (ia.e_tags && t.tags))
+                ORDER BY t.type, t.subtype, stat`
+        }
         let uniqueStats = `
             SELECT uj.id, array_agg(us.stat) as stats, array_agg(us.stat_order) as stat_order FROM unique_jewellery as uj
             LEFT JOIN uniquejewellery_stats as ujs ON ujs.item_id=uj.id
@@ -78,13 +83,13 @@ class JewelleryController {
             JOIN (${uniqueStats}) AS s ON j.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
             baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE array_position(bj.impl_order, '${req.query.stat_order}')>0`
-            rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
+            if (rareJewelleryQuery!=='') rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
             uniqueJewelleryQuery = `
                 SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj 
                 WHERE array_position(uj.impl_order, '${req.query.stat_order}')>0 OR array_position(uj.stat_order, '${req.query.stat_order}')>0`
         }
-        rareJewelleryQuery = `
-            SELECT j_type, j_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareJewelleryQuery}) as j GROUP BY (j_type, j_subtype)`
+        if (rareJewelleryQuery!=='') rareJewelleryQuery = `
+            SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareJewelleryQuery}) as j GROUP BY (i_type, i_subtype)`
 
         // baseJewelleryQuery = `
         //     SELECT bj.*, array_agg(i.stat) as implicit FROM base_jewellery as bj JOIN (${baseJewelleryQuery}) as j ON bj.id=j.id 
