@@ -58,15 +58,7 @@ class FlaskController {
             SELECT bf.*, b.buffs, b.buff_order, i.implicit, i.impl_order FROM base_flasks as bf JOIN (${baseFlasksQuery}) as f ON bf.id=f.id 
             JOIN (${implicits}) as i ON f.id=i.id
             JOIN (${buffs}) as b ON b.id=f.id`
-        // baseJewelleryQuery = `
-        //     SELECT bj.*, array_agg(i.stat) as implicit FROM base_flasks as bj JOIN (${baseJewelleryQuery}) as j ON bj.id=j.id 
-        //     LEFT JOIN baseflasks_implicit as bji ON j.id=bji.flask_id LEFT JOIN implicit as i ON bji.implicit_id=i.id
-        //     GROUP BY bj.id`
-        // let implicitsForUniqueJewellery = `
-        //     SELECT uj.id, i.implicit as implicit FROM (${uniqueJewelleryQuery}) AS uj 
-        //     JOIN (SELECT bj.id, array_agg(i.stat) as implicit FROM base_flasks as bj 
-        //         LEFT JOIN baseflasks_implicit as bji ON bj.id=bji.flask_id 
-        //         LEFT JOIN implicit as i ON bji.implicit_id=i.id GROUP BY bj.id) AS i ON uj.base_id=i.id`
+            
         let affixes = `
             SELECT tags.id, a.type, a.stat, tags.tags, tags.stat_order, fae.tags as e_tags FROM flasks_affixes as a JOIN (
                 SELECT fa.id, array_agg(t.tag) as tags, fa.stat_order FROM flasks_affixes as fa  
@@ -98,37 +90,62 @@ class FlaskController {
             JOIN (${implicits}) AS i ON f.base_id=i.id
             JOIN (${uniqueStats}) AS s ON f.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
-            let stat_order = parseFloat(req.query.stat_order)
-            baseFlasksQuery = `
+            // let stat_order = parseFloat(req.query.stat_order)
+            // baseFlasksQuery = `
+            //     SELECT bf.* FROM (${baseFlasksQuery}) as bf 
+            //     WHERE array_position(bf.impl_order, ${stat_order})>0 OR array_position(bf.impl_order, ${stat_order})>0`
+            if (baseFlasksQuery!=='') baseFlasksQuery = `
                 SELECT bf.* FROM (${baseFlasksQuery}) as bf 
-                WHERE array_position(bf.impl_order, ${stat_order})>0 OR array_position(bf.impl_order, ${stat_order})>0`
-            rareFlasksQuery = `SELECT * FROM (${rareFlasksQuery}) as rf WHERE rf.stat_order=${stat_order}`
-            uniqueFlasksQuery = `
+                WHERE array_cat(bf.impl_order, bf.buff_order) @> ARRAY[${req.query.stat_order}]::real[]`
+            // rareFlasksQuery = `SELECT * FROM (${rareFlasksQuery}) as rf WHERE rf.stat_order=${stat_order}`
+            // uniqueFlasksQuery = `
+            //     SELECT uf.* FROM (${uniqueFlasksQuery}) as uf 
+            //     WHERE array_position(uf.impl_order, ${stat_order})>0 OR array_position(uf.stat_order, ${stat_order})>0
+            //     OR array_position(uf.buff_order, ${stat_order})>0`
+            if (uniqueFlasksQuery!=='') uniqueFlasksQuery = `
                 SELECT uf.* FROM (${uniqueFlasksQuery}) as uf 
-                WHERE array_position(uf.impl_order, ${stat_order})>0 OR array_position(uf.stat_order, ${stat_order})>0
-                OR array_position(uf.buff_order, ${stat_order})>0`
+                WHERE array_cat(array_cat(uf.impl_order, uf.stat_order), uf.buff_order) @> ARRAY[${req.query.stat_order}]::real[]`
         }
-        rareFlasksQuery = `
-            SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareFlasksQuery}) as f GROUP BY (i_type, i_subtype)`
+        // rareFlasksQuery = `
+        //     SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareFlasksQuery}) as f GROUP BY (i_type, i_subtype)`
+
+        if (rareFlasksQuery!=='') {
+            rareFlasksQuery = `
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareFlasksQuery}) as f GROUP BY (i_type, i_subtype)`
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareFlasksQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareFlasksQuery}) as w WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`
+        }
 
         let baseFlasks = await db.query(baseFlasksQuery)
         let rareFlasks = await db.query(rareFlasksQuery)
         let uniqueFlasks = await db.query(uniqueFlasksQuery)
         
         if(req.query.rarity==='normal') {
-            console.log(baseFlasks.rows.length)
-            res.status(200).json({baseFlasks: baseFlasks.rows})
+            // console.log(baseFlasks.rows.length)
+            res.status(200).json({
+                baseFlasks: baseFlasks.rows,
+                resultsCount: baseFlasks.rows.length
+            })
         } else if(req.query.rarity==='rare') {
-            console.log(rareFlasks.rows.length)
-            res.status(200).json({rareFlasks: rareFlasks.rows})
+            // console.log(rareFlasks.rows.length)
+            res.status(200).json({
+                rareFlasks: rareFlasks.rows,
+                resultsCount: rareFlasks.rows.length
+            })
         } else if(req.query.rarity==='unique') {
-            console.log(uniqueFlasks.rows.length)
-            res.status(200).json({uniqueFlasks: uniqueFlasks.rows})
+            // console.log(uniqueFlasks.rows.length)
+            res.status(200).json({
+                uniqueFlasks: uniqueFlasks.rows,
+                resultsCount: uniqueFlasks.rows.length
+            })
         } else if(req.query.rarity==='any') {
             res.status(200).json({
                 baseFlasks: baseFlasks.rows, 
                 rareFlasks: rareFlasks.rows,
-                uniqueFlasks: uniqueFlasks.rows
+                uniqueFlasks: uniqueFlasks.rows,
+                resultsCount: baseFlasks.rows.length+rareFlasks.rows.length+uniqueFlasks.rows.length
             })
         }
     }

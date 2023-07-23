@@ -36,6 +36,7 @@ class AnyController {
         //     let uniqueWeaponsQuery = 'SELECT * FROM unique_weapon'
         //     let uniqueArmourQuery = 'SELECT * FROM unique_armour'
         // }
+        //console.log(req.query.stat_order)
         let baseWeaponsQuery = 'SELECT * FROM base_weapon'
         let rareWeaponsQuery = `
             SELECT DISTINCT ON (bw.type, bw.subtype) bw.type, bw.subtype, tag.tags FROM (
@@ -668,53 +669,78 @@ class AnyController {
             JOIN (${uniqueFlasksStats}) AS s ON f.id=s.id`
 
         if (req.query.stat_order && req.query.stat_order!=='null') {
-            if (baseWeaponsQuery!=='') baseWeaponsQuery = `SELECT bw.* FROM (${baseWeaponsQuery}) as bw WHERE array_position(bw.impl_order, '${req.query.stat_order}')>0`
-            if (rareWeaponsQuery!=='') {
-                rareWeaponsQuery = `SELECT * FROM (${rareWeaponsQuery}) as rw WHERE rw.stat_order=${req.query.stat_order}`
-            }
+            if (baseWeaponsQuery!=='') 
+                baseWeaponsQuery = `SELECT bw.* FROM (${baseWeaponsQuery}) as bw WHERE bw.impl_order @> ARRAY[${req.query.stat_order}]`
+            // if (rareWeaponsQuery!=='') {
+            //     let rareStats = `SELECT array_agg(rw.stat_order) as so_array FROM (${rareWeaponsQuery}) as rw`
+            //     rareWeaponsQuery = `SELECT rw.* FROM (${rareWeaponsQuery}) as rw WHERE (${rareStats}) @> ARRAY[${req.query.stat_order}]::real[]`
+            //     // CROSS JOIN (${rareStats}) as rs
+            //     // WHERE rs.so_array @> ARRAY[${req.query.stat_order}]`
+            //     //WHERE rw.stat_order=${req.query.stat_order}`
+            // }
             if (uniqueWeaponsQuery!=='') uniqueWeaponsQuery = `
-                SELECT uw.* FROM (${uniqueWeaponsQuery}) as uw 
-                WHERE array_position(uw.impl_order, '${req.query.stat_order}')>0 OR array_position(uw.stat_order, '${req.query.stat_order}')>0`
-            if (baseArmourQuery!=='') baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE array_position(ba.impl_order, '${req.query.stat_order}')>0`
-            if (rareArmourQuery!=='') {
-                rareArmourQuery = `SELECT * FROM (${rareArmourQuery}) as ra WHERE ra.stat_order=${req.query.stat_order}`
-            }
+                SELECT uw.* FROM (${uniqueWeaponsQuery}) as uw WHERE array_cat(uw.impl_order, uw.stat_order) @> ARRAY[${req.query.stat_order}]`
+                //array_position(uw.impl_order, '${req.query.stat_order}')>0 OR array_position(uw.stat_order, '${req.query.stat_order}')>0`
+            if (baseArmourQuery!=='') 
+                baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE ba.impl_order @> ARRAY[${req.query.stat_order}]`
+            // if (rareArmourQuery!=='') {
+            //     rareArmourQuery = `SELECT * FROM (${rareArmourQuery}) as ra WHERE ra.stat_order=${req.query.stat_order}`
+            // }
             if (uniqueArmourQuery!=='') uniqueArmourQuery = `
-                SELECT ua.* FROM (${uniqueArmourQuery}) as ua 
-                WHERE array_position(ua.impl_order, '${req.query.stat_order}')>0 OR array_position(ua.stat_order, '${req.query.stat_order}')>0`
-            if (baseJewelleryQuery!=='') baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE array_position(bj.impl_order, '${req.query.stat_order}')>0`
-            if (rareJewelleryQuery!=='') {
-                rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
-            }
+                SELECT ua.* FROM (${uniqueArmourQuery}) as ua WHERE array_cat(ua.impl_order, ua.stat_order) @> ARRAY[${req.query.stat_order}]`
+                //array_position(ua.impl_order, '${req.query.stat_order}')>0 OR array_position(ua.stat_order, '${req.query.stat_order}')>0`
+            if (baseJewelleryQuery!=='') 
+                baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE bj.impl_order @> ARRAY[${req.query.stat_order}]`
+            // if (rareJewelleryQuery!=='') {
+            //     rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
+            // }
             if (uniqueJewelleryQuery!=='') uniqueJewelleryQuery = `
-                SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj 
-                WHERE array_position(uj.impl_order, '${req.query.stat_order}')>0 OR array_position(uj.stat_order, '${req.query.stat_order}')>0`
+                SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj WHERE array_cat(uj.impl_order, uj.stat_order) @> ARRAY[${req.query.stat_order}]`
+                //array_position(uj.impl_order, '${req.query.stat_order}')>0 OR array_position(uj.stat_order, '${req.query.stat_order}')>0`
             if (baseFlasksQuery!=='') baseFlasksQuery = `
                 SELECT bf.* FROM (${baseFlasksQuery}) as bf 
-                WHERE array_position(bf.impl_order, '${req.query.stat_order}')>0 OR array_position(bf.impl_order, '${req.query.stat_order}')>0`
-            if (rareFlasksQuery!=='') {
-                rareFlasksQuery = `SELECT * FROM (${rareFlasksQuery}) as rf WHERE rf.stat_order=${req.query.stat_order}`
-            }
+                WHERE array_cat(bf.impl_order, bf.buff_order) @> ARRAY[${req.query.stat_order}]::real[]`
+                //array_position(bf.impl_order, '${req.query.stat_order}')>0 OR array_position(bf.buff_order, '${req.query.stat_order}')>0`
+            // if (rareFlasksQuery!=='') {
+            //     rareFlasksQuery = `SELECT * FROM (${rareFlasksQuery}) as rf WHERE rf.stat_order=${req.query.stat_order}`
+            // }
             if (uniqueFlasksQuery!=='') uniqueFlasksQuery = `
                 SELECT uf.* FROM (${uniqueFlasksQuery}) as uf 
-                WHERE array_position(uf.impl_order, '${req.query.stat_order}')>0 OR array_position(uf.stat_order, '${req.query.stat_order}')>0
-                OR array_position(uf.buff_order, '${req.query.stat_order}')>0`
+                WHERE array_cat(array_cat(uf.impl_order, uf.stat_order), uf.buff_order) @> ARRAY[${req.query.stat_order}]::real[]`
+                // array_position(uf.impl_order, '${req.query.stat_order}')>0 OR array_position(uf.stat_order, '${req.query.stat_order}')>0
+                // OR array_position(uf.buff_order, '${req.query.stat_order}')>0`
         }
         if (rareWeaponsQuery!=='') {
             rareWeaponsQuery = `
-                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareWeaponsQuery}) as w GROUP BY (i_type, i_subtype)`        
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareWeaponsQuery}) as w GROUP BY (i_type, i_subtype)` 
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareWeaponsQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareWeaponsQuery}) as w WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`   
         }
         if (rareArmourQuery!=='') {
             rareArmourQuery = `
-                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareArmourQuery}) as a GROUP BY (i_type, i_subtype)`
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareArmourQuery}) as a GROUP BY (i_type, i_subtype)`
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareArmourQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareArmourQuery}) as a WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`
         }
         if (rareJewelleryQuery!=='') {
             rareJewelleryQuery = `
-                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareJewelleryQuery}) as j GROUP BY (i_type, i_subtype)`
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareJewelleryQuery}) as j GROUP BY (i_type, i_subtype)`
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareJewelleryQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareJewelleryQuery}) as j WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`
         }
         if (rareFlasksQuery!=='') {
             rareFlasksQuery = `
-                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareFlasksQuery}) as f GROUP BY (i_type, i_subtype)`
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareFlasksQuery}) as f GROUP BY (i_type, i_subtype)`
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareFlasksQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareFlasksQuery}) as w WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`
         }
 
         let baseWeapons = await db.query(baseWeaponsQuery)
@@ -736,6 +762,7 @@ class AnyController {
                 baseArmour: baseArmour.rows,
                 baseJewellery: baseJewellery.rows,
                 baseFlasks: baseFlasks.rows,
+                resultsCount: baseWeapons.rows.length+baseArmour.rows.length+baseJewellery.rows.length+baseFlasks.rows.length
             })
         } else if(req.query.rarity==='rare') {
             res.status(200).json({
@@ -743,6 +770,7 @@ class AnyController {
                 rareArmour: rareArmour.rows,
                 rareJewellery: rareJewellery.rows,
                 rareFlasks: rareFlasks.rows,
+                resultsCount: rareWeapons.rows.length+rareArmour.rows.length+rareJewellery.rows.length+rareFlasks.rows.length
             })
         } else if(req.query.rarity==='unique') {
             //console.log(uniqueWeapons.rows.length)
@@ -751,13 +779,20 @@ class AnyController {
                 uniqueArmour: uniqueArmour.rows,
                 uniqueJewellery: uniqueJewellery.rows,
                 uniqueFlasks: uniqueFlasks.rows,
+                resultsCount: uniqueWeapons.rows.length+uniqueArmour.rows.length+uniqueJewellery.rows.length+uniqueFlasks.rows.length
             })
-        } else if(req.query.rarity==='any') {
+        } else 
+        if(req.query.rarity==='any') {
             res.status(200).json({
                 baseWeapons: baseWeapons.rows, rareWeapons: rareWeapons.rows, uniqueWeapons: uniqueWeapons.rows,
                 baseArmour: baseArmour.rows, rareArmour: rareArmour.rows, uniqueArmour: uniqueArmour.rows,
                 baseJewellery: baseJewellery.rows, rareJewellery: rareJewellery.rows, uniqueJewellery: uniqueJewellery.rows,
                 baseFlasks: baseFlasks.rows, rareFlasks: rareFlasks.rows, uniqueFlasks: uniqueFlasks.rows,
+                resultsCount: 
+                    rareWeapons.rows.length+baseWeapons.rows.length+uniqueWeapons.rows.length+
+                    baseArmour.rows.length+rareArmour.rows.length+uniqueArmour.rows.length+
+                    baseJewellery.rows.length+rareJewellery.rows.length+uniqueJewellery.rows.length+
+                    baseFlasks.rows.length+rareFlasks.rows.length+uniqueFlasks.rows.length
             })
         }
     }

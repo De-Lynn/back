@@ -228,52 +228,53 @@ class ArmourController {
             JOIN (${implicits}) AS i ON a.base_id=i.id
             JOIN (${uniqueStats}) AS s ON a.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
-            baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE array_position(ba.impl_order, '${req.query.stat_order}')>0`
-            if (rareArmourQuery!=='') rareArmourQuery = `SELECT * FROM (${rareArmourQuery}) as ra WHERE ra.stat_order=${req.query.stat_order}`
-            uniqueArmourQuery = `
-                SELECT ua.* FROM (${uniqueArmourQuery}) as ua 
-                WHERE array_position(ua.impl_order, '${req.query.stat_order}')>0 OR array_position(ua.stat_order, '${req.query.stat_order}')>0`
+            // baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE array_position(ba.impl_order, '${req.query.stat_order}')>0`
+            if (baseArmourQuery!=='') 
+                baseArmourQuery = `SELECT ba.* FROM (${baseArmourQuery}) as ba WHERE ba.impl_order @> ARRAY[${req.query.stat_order}]`
+            // if (rareArmourQuery!=='') rareArmourQuery = `SELECT * FROM (${rareArmourQuery}) as ra WHERE ra.stat_order=${req.query.stat_order}`
+            // uniqueArmourQuery = `
+            //     SELECT ua.* FROM (${uniqueArmourQuery}) as ua 
+            //     WHERE array_position(ua.impl_order, '${req.query.stat_order}')>0 OR array_position(ua.stat_order, '${req.query.stat_order}')>0`
+            if (uniqueArmourQuery!=='') uniqueArmourQuery = `
+                SELECT ua.* FROM (${uniqueArmourQuery}) as ua WHERE array_cat(ua.impl_order, ua.stat_order) @> ARRAY[${req.query.stat_order}]`
         }
-        if (rareArmourQuery!=='') rareArmourQuery = `
-            SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareArmourQuery}) as a GROUP BY (i_type, i_subtype)`
-        // baseArmourQuery = `
-        //     SELECT ba.*, array_agg(i.stat) as implicit FROM base_armour as ba JOIN (${baseArmourQuery}) as a ON ba.id=a.id 
-        //     LEFT JOIN basearmour_implicit as bai ON a.id=bai.armour_id LEFT JOIN implicit as i ON bai.implicit_id=i.id
-        //     GROUP BY ba.id`
-        // let implicitsForUniqueArmour = `
-        //     SELECT ua.id, i.implicit as implicit FROM (${uniqueArmourQuery}) AS ua 
-        //     JOIN (SELECT ba.id, array_agg(i.stat) as implicit FROM base_armour as ba 
-        //         LEFT JOIN basearmour_implicit as bai ON ba.id=bai.armour_id 
-        //         LEFT JOIN implicit as i ON bai.implicit_id=i.id GROUP BY ba.id) AS i ON ua.base_id=i.id`
-        // let uniqueStatsForUniqueArmour = `
-        //     SELECT ua.id, array_agg(us.stat) as stats FROM (${uniqueArmourQuery}) as ua
-        //     LEFT JOIN uniquearmour_stats as uas ON uas.item_id=ua.id
-        //     LEFT JOIN unique_stats as us ON uas.stat_id=us.id GROUP BY ua.id`
-        // let uniqueExpands = `
-        //     SELECT uw.id, array_agg(e.stat) as expands FROM (${uniqueWeaponsQuery}) as uw
-        //     LEFT JOIN uniqueweapon_expands as uwe ON uw.id=uwe.item_id
-        //     LEFT JOIN expands as e ON uwe.expand_id=e.id`
-        // uniqueArmourQuery = `
-        //     SELECT ua.*, i.implicit, s.stats FROM unique_armour as ua 
-        //     JOIN (${implicitsForUniqueArmour}) AS i ON ua.id=i.id
-        //     JOIN (${uniqueStatsForUniqueArmour}) AS s ON ua.id=s.id`
+        if (rareArmourQuery!=='') {
+            rareArmourQuery = `
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareArmourQuery}) as a GROUP BY (i_type, i_subtype)`
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareArmourQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareArmourQuery}) as a WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`
+        }
+            // rareArmourQuery = `
+            // SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareArmourQuery}) as a GROUP BY (i_type, i_subtype)`
 
         let baseArmour = await db.query(baseArmourQuery)
         let rareArmour = await db.query(rareArmourQuery)
         let uniqueArmour = await db.query(uniqueArmourQuery)
         
         if(req.query.rarity==='normal') {
-            res.status(200).json({baseArmour: baseArmour.rows})
+            res.status(200).json({
+                baseArmour: baseArmour.rows,
+                resultsCount: baseArmour.rows.length
+            })
         } else if(req.query.rarity==='rare') {
-            res.status(200).json({rareArmour: rareArmour.rows})
+            res.status(200).json({
+                rareArmour: rareArmour.rows,
+                resultsCount: rareArmour.rows.length
+            })
         } else if(req.query.rarity==='unique') {
             //console.log(uniqueWeapons.rows.length)
-            res.status(200).json({uniqueArmour: uniqueArmour.rows})
+            res.status(200).json({
+                uniqueArmour: uniqueArmour.rows,
+                resultsCount: uniqueArmour.rows.length
+            })
         } else if(req.query.rarity==='any') {
             res.status(200).json({
                 baseArmour: baseArmour.rows, 
                 rareArmour: rareArmour.rows,
-                uniqueArmour: uniqueArmour.rows
+                uniqueArmour: uniqueArmour.rows,
+                resultsCount: baseArmour.rows.length+rareArmour.rows.length+uniqueArmour.rows.length
             })
         }
     }

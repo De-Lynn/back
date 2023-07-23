@@ -82,52 +82,53 @@ class JewelleryController {
             JOIN (${implicits}) AS i ON j.base_id=i.id
             JOIN (${uniqueStats}) AS s ON j.id=s.id`
         if (req.query.stat_order && req.query.stat_order!=='null') {
-            baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE array_position(bj.impl_order, '${req.query.stat_order}')>0`
-            if (rareJewelleryQuery!=='') rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
-            uniqueJewelleryQuery = `
-                SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj 
-                WHERE array_position(uj.impl_order, '${req.query.stat_order}')>0 OR array_position(uj.stat_order, '${req.query.stat_order}')>0`
+            // baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE array_position(bj.impl_order, '${req.query.stat_order}')>0`
+            if (baseJewelleryQuery!=='') 
+                baseJewelleryQuery = `SELECT bj.* FROM (${baseJewelleryQuery}) as bj WHERE bj.impl_order @> ARRAY[${req.query.stat_order}]`
+            //if (rareJewelleryQuery!=='') rareJewelleryQuery = `SELECT * FROM (${rareJewelleryQuery}) as rj WHERE rj.stat_order=${req.query.stat_order}`
+            // uniqueJewelleryQuery = `
+            //     SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj 
+            //     WHERE array_position(uj.impl_order, '${req.query.stat_order}')>0 OR array_position(uj.stat_order, '${req.query.stat_order}')>0`
+            if (uniqueJewelleryQuery!=='') uniqueJewelleryQuery = `
+                SELECT uj.* FROM (${uniqueJewelleryQuery}) as uj WHERE array_cat(uj.impl_order, uj.stat_order) @> ARRAY[${req.query.stat_order}]`
         }
-        if (rareJewelleryQuery!=='') rareJewelleryQuery = `
-            SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareJewelleryQuery}) as j GROUP BY (i_type, i_subtype)`
+        // if (rareJewelleryQuery!=='') rareJewelleryQuery = `
+        //     SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats FROM (${rareJewelleryQuery}) as j GROUP BY (i_type, i_subtype)`
 
-        // baseJewelleryQuery = `
-        //     SELECT bj.*, array_agg(i.stat) as implicit FROM base_jewellery as bj JOIN (${baseJewelleryQuery}) as j ON bj.id=j.id 
-        //     LEFT JOIN basejewellery_implicit as bji ON j.id=bji.jewellery_id LEFT JOIN implicit as i ON bji.implicit_id=i.id
-        //     GROUP BY bj.id`
-        // let implicitsForUniqueJewellery = `
-        //     SELECT uj.id, i.implicit as implicit FROM (${uniqueJewelleryQuery}) AS uj 
-        //     JOIN (SELECT bj.id, array_agg(i.stat) as implicit FROM base_jewellery as bj 
-        //         LEFT JOIN basejewellery_implicit as bji ON bj.id=bji.jewellery_id 
-        //         LEFT JOIN implicit as i ON bji.implicit_id=i.id GROUP BY bj.id) AS i ON uj.base_id=i.id`
-        // let uniqueStatsForUniqueJewellery = `
-        //     SELECT uj.id, array_agg(us.stat) as stats FROM (${uniqueJewelleryQuery}) as uj
-        //     LEFT JOIN uniquejewellery_stats as ujs ON ujs.item_id=uj.id
-        //     LEFT JOIN unique_stats as us ON ujs.stat_id=us.id GROUP BY uj.id`
-        // let uniqueExpands = `
-        //     SELECT uw.id, array_agg(e.stat) as expands FROM (${uniqueWeaponsQuery}) as uw
-        //     LEFT JOIN uniqueweapon_expands as uwe ON uw.id=uwe.item_id
-        //     LEFT JOIN expands as e ON uwe.expand_id=e.id`
-        // uniqueJewelleryQuery = `
-        //     SELECT ua.*, i.implicit, s.stats FROM unique_armour as ua 
-        //     JOIN (${implicitsForUniqueJewellery}) AS i ON ua.id=i.id
-        //     JOIN (${uniqueStatsForUniqueJewellery}) AS s ON ua.id=s.id`
+        if (rareJewelleryQuery!=='') {
+            rareJewelleryQuery = `
+                SELECT i_type, i_subtype, array_agg(ARRAY[stat_type, stat]) as stats, array_agg(stat_order) as stats_orders 
+                FROM (${rareJewelleryQuery}) as j GROUP BY (i_type, i_subtype)`
+            if (req.query.stat_order && req.query.stat_order!=='null') 
+                rareJewelleryQuery = `
+                    SELECT i_type, i_subtype, stats FROM (${rareJewelleryQuery}) as j WHERE stats_orders @> ARRAY[${req.query.stat_order}]::real[]`
+        }
 
         let baseJewellery = await db.query(baseJewelleryQuery)
         let rareJewellery = await db.query(rareJewelleryQuery)
         let uniqueJewellery = await db.query(uniqueJewelleryQuery)
         
         if(req.query.rarity==='normal') {
-            res.status(200).json({baseJewellery: baseJewellery.rows})
+            res.status(200).json({
+                baseJewellery: baseJewellery.rows,
+                resultsCount: baseJewellery.rows.length
+            })
         } else if(req.query.rarity==='rare') {
-            res.status(200).json({rareJewellery: rareJewellery.rows})
+            res.status(200).json({
+                rareJewellery: rareJewellery.rows,
+                resultsCount: rareJewellery.rows.length
+            })
         } else if(req.query.rarity==='unique') {
-            res.status(200).json({uniqueJewellery: uniqueJewellery.rows})
+            res.status(200).json({
+                uniqueJewellery: uniqueJewellery.rows,
+                resultsCount: uniqueJewellery.rows.length
+            })
         } else if(req.query.rarity==='any') {
             res.status(200).json({
                 baseJewellery: baseJewellery.rows, 
                 rareJewellery: rareJewellery.rows,
-                uniqueJewellery: uniqueJewellery.rows
+                uniqueJewellery: uniqueJewellery.rows,
+                resultsCount: baseJewellery.rows.length+rareJewellery.rows.length+uniqueJewellery.rows.length
             })
         }
     }
